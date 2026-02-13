@@ -49,6 +49,7 @@ def makePlots(withFit=True):
     ax2.set_title("Lineweaver-Burke")
     ax1.legend()
     ax2.legend()
+
     plt.tight_layout()
     plt.show()
 
@@ -69,38 +70,42 @@ def orderedSequentialMechanism(S, Vmax, K_ia, K_A):
 def chi2(expected, observed):
     return np.sum((expected - observed) ** 2) 
 
-def bootstrapK_ia(N_bootstrap=1000, plot=False):
-    K_ia = []
+def bootstrapUncertainties(N_bootstrap=1000):
+    V_max = []
+    K_A = []
+    K_B = []
 
-    for i in range(N_bootstrap):
+    for _ in range(N_bootstrap):
         sample = data.sample(frac=1, replace=True)
 
         try:
-            popt, _ = curve_fit(
-                f=sequentialMechanism,
+            popt, pcov = curve_fit(
+                f=pingpongMechanism,
                 xdata=(sample["S1"], sample["S2"]),
                 ydata=sample["Rate"],
                 p0=[
                     sample["Rate"].max(),
-                    1e-3,
                     1.0,
                     1.0
                 ],
-                bounds=([0, 0, 0, 0], np.inf)
+                bounds=([0, 0, 0], np.inf)
             )
+
+            V_max.append(popt[0])
+            K_A.append(popt[1])
+            K_B.append(popt[2])
+
         except RuntimeError:
             print("oeps")
             continue
 
-        K_ia.append(popt[1])
+    V_max_std = np.std(V_max)
+    K_A_std = np.std(K_A)
+    K_B_std = np.std(K_B)
 
-    if plot:
-        plt.hist(K_ia, density=True)
-        plt.xlabel("$K_{ia}$")
-        plt.ylabel("Density of occurence")
-        plt.show()
-
-    print("95% CI K_ia:", np.percentile(K_ia, [2.5, 97.5]))  
+    print("Standard deviation of V_max:", V_max_std)
+    print("Standard deviation of K_A:", K_A_std)
+    print("Standard deviation of K_B:", K_B_std)
 
     return
 
@@ -177,7 +182,7 @@ def modelFitComparison():
         bounds=([0, 0, 0, 0], np.inf)
     )
 
-    popt_pong, _ = curve_fit(
+    popt_pong, pcov = curve_fit(
         f=pingpongMechanism,
         xdata=(data["S1"], data["S2"]),
         ydata=data["Rate"],
@@ -213,8 +218,18 @@ def modelFitComparison():
     print("Chi2 value for ping-pong model:", chi2_pong)
     print("Chi2 value for ordered sequential model:", chi2_ordered)
 
+    # plot residuals histogram for pingpong mechanism
+    plt.hist(fitted_pong- data["Rate"], density=True)
+    ymin, ymax = plt.ylim()
+    plt.vlines(np.mean(fitted_pong- data["Rate"]), ymin, ymax, linestyles="dashed", color="grey")
+    plt.title("Ping-pong model")
+    plt.xlabel("$E_i - O_i$")
+    plt.ylabel("Density of occurence")
+    plt.show()
+
     return
 
 # makePlots()
-# modelFitComparison()
-simulateConcentration()
+modelFitComparison()
+# bootstrapUncertainties()
+# simulateConcentration()
