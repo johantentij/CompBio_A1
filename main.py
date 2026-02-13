@@ -229,7 +229,52 @@ def modelFitComparison():
 
     return
 
+def question_2_plotting(V6_max, D, title_prefix="Scenario"):
+ 
+    plt.figure(figsize=(7, 6))
+    
+    is_feasible = V6_max >= D
+    
+    if is_feasible:
+        # case 1: feasible
+        v1_limit = V6_max - D
+        v1 = np.linspace(0, v1_limit, 100)
+        v6 = v1 + D
+        v6_ceiling = np.full_like(v1, V6_max)
+        
+        plt.fill_between(v1, v6, v6_ceiling, color='green', alpha=0.3, label='Feasible Region')
+        plt.plot(v1, v6, 'g-', linewidth=4, label='Steady state Line')
+        
+        plt.title(f"{title_prefix}: Feasible Space ($D \leq V_{{6,max}}$)")
+        plt.ylim(0, 15)
+        
+    else:
+        # case 2: infeasible
+        v1 = np.linspace(0, 10, 100)
+        v6 = v1 + D
+        
+        plt.plot(v1, v6, 'b-', label='Required Flux ($v_1+D$)')
+        plt.title(f"{title_prefix}: Infeasible Space ($D > V_{{6,max}}$)")
+        plt.ylim(0, 20)
+
+
+    plt.axhline(y=V6_max, color='r', linestyle='--', label='$v_{6,max}$')
+    plt.xlabel("$v_1$")
+    plt.ylabel("$v_6$")
+    plt.xlim(0, 10)
+    plt.grid(True, alpha=0.3)
+    plt.legend()
+
+    plt.xticks([])
+    plt.yticks([])
+    
+    plt.tight_layout()
+    plt.show()
+
+
 # makePlots()
 modelFitComparison()
 # bootstrapUncertainties()
 # simulateConcentration()
+# question_2_plotting(V6_max=10.0, D=4.0) # feasible
+# question_2_plotting(V6_max=10.0, D=12.0) # infeasible
