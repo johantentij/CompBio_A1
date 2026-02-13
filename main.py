@@ -3,7 +3,6 @@ import matplotlib.pyplot as plt
 import pandas as pd
 
 from scipy.optimize import curve_fit
-from scipy.stats import chi2
 
 data = pd.read_csv("Kinetics.csv")
 
@@ -13,17 +12,44 @@ groups = []
 for S2 in S2_vals:
     groups.append(data[data["S2"] == S2])
 
-def makePlots():
+def makePlots(withFit=True):
     fig, (ax1, ax2) = plt.subplots(1, 2)
 
+    if withFit:
+        popt, _ = curve_fit(
+            f=pingpongMechanism,
+            xdata=(data["S1"], data["S2"]),
+            ydata=data["Rate"],
+            p0=[
+                data["Rate"].max(),
+                1.0,
+                1.0,
+            ],
+            bounds=([0, 0, 0], np.inf)
+        )
+
+        print("Fitted V_max:", popt[0])
+        print("Fitted K_A", popt[1])
+        print("Fitted K_B", popt[2])
+
     for i, g in enumerate(groups):
-        ax1.scatter(g["S1"], g["Rate"], label="$S_2=$"+str(S2_vals[i]))
-        ax2.scatter(1 / g["S1"], 1 / g["Rate"], label="$S_2=$"+str(S2_vals[i]))
+        ax1.scatter(g["S1"], g["Rate"], label="$S_2=$"+str(S2_vals[i]), marker='.')
+        ax2.scatter(1 / g["S1"], 1 / g["Rate"], label="$S_2=$"+str(S2_vals[i]), marker='.')
+
+        if withFit:
+            rateFitted = pingpongMechanism((g["S1"], g["S2"]), *popt)
+            ax1.plot(g["S1"], rateFitted, linestyle="dashed", color="grey")
+            ax2.plot(1 / g["S1"], 1 / rateFitted, linestyle="dashed", color="grey")
 
     ax1.set_xlabel("$S_1$")
-    ax2.set_ylabel("Rate")
+    ax1.set_ylabel("Rate")
+    ax2.set_xlabel("$1\\ /\\ S_1$")
+    ax2.set_ylabel("$1\\ /\\ Rate$")
+    ax1.set_title("Rate vs. $S_1$")
+    ax2.set_title("Lineweaver-Burke")
     ax1.legend()
     ax2.legend()
+    plt.tight_layout()
     plt.show()
 
     return
@@ -32,6 +58,17 @@ def sequentialMechanism(S, Vmax, K_ia, K_A, K_B):
     S1, S2 = S
     return Vmax * S1 * S2 / (K_ia * K_B + K_B * S1 + K_A * S2 + S1 * S2)
 
+def pingpongMechanism(S, Vmax, K_A, K_B):
+    S1, S2 = S
+    return Vmax * S1 * S2 / (K_B * S1 + K_A * S2 + S1 * S2)
+
+def orderedSequentialMechanism(S, Vmax, K_ia, K_A):
+    S1, S2 = S
+    return Vmax * S1 * S2 / (K_ia * K_A + K_A * S1 + S1 * S2)
+
+def chi2(expected, observed):
+    return np.sum((expected - observed) ** 2) 
+
 def bootstrapK_ia(N_bootstrap=1000, plot=False):
     K_ia = []
 
@@ -39,7 +76,7 @@ def bootstrapK_ia(N_bootstrap=1000, plot=False):
         sample = data.sample(frac=1, replace=True)
 
         try:
-            popt, pcov = curve_fit(
+            popt, _ = curve_fit(
                 f=sequentialMechanism,
                 xdata=(sample["S1"], sample["S2"]),
                 ydata=sample["Rate"],
@@ -91,33 +128,93 @@ def RK4(state, params, T_max=10, steps=1000):
 
     return t, stateHist
 
-popt, pcov = curve_fit(
-    f=sequentialMechanism,
-    xdata=(data["S1"], data["S2"]),
-    ydata=data["Rate"],
-    p0=[
-        data["Rate"].max(),
-        1e-1,
-        1.0,
-        1.0
-    ]
-)
+def simulateConcentration():
+    popt, _ = curve_fit(
+        f=sequentialMechanism,
+        xdata=(data["S1"], data["S2"]),
+        ydata=data["Rate"],
+        p0=[
+            data["Rate"].max(),
+            1e-1,
+            1.0,
+            1.0
+        ],
+        bounds=([0, 0, 0, 0], np.inf)
+    )
 
-initState = np.array([
-    100 / 150,
-    1000
-])
+    initState = np.array([
+        100 / 150,
+        10000               # arbitrary high value
+    ])
 
-targetConcentration = 1 / 150
-t, stateHist = RK4(initState, popt, T_max=2, steps=int(1e4))
+    targetConcentration = 1 / 150
+    t, stateHist = RK4(initState, popt, T_max=2, steps=int(1e5))
 
-T_target = t[stateHist[:, 0] < targetConcentration]
-T_target = T_target[0]
+    T_target = t[stateHist[:, 0] < targetConcentration]
+    T_target = T_target[0]
 
-print("Concentration below 1 g/L at t =", T_target)
+    print("Concentration below 1 g/L at t =", T_target)
 
-plt.plot(t, stateHist[:, 0])
-plt.hlines(targetConcentration, np.min(t), np.max(t), linestyles="dashed", color="grey")
-plt.xlabel("Time (s)")
-plt.ylabel("$S_1$ (mol / L)")
-plt.show()
+    plt.plot(t, stateHist[:, 0])
+    plt.hlines(targetConcentration, np.min(t), np.max(t), linestyles="dashed", color="grey")
+    plt.xlabel("Time (s)")
+    plt.ylabel("$S_1$ (mol / L)")
+    plt.show()
+
+    return
+
+def modelFitComparison():
+    popt_seq, _ = curve_fit(
+        f=sequentialMechanism,
+        xdata=(data["S1"], data["S2"]),
+        ydata=data["Rate"],
+        p0=[
+            data["Rate"].max(),
+            1e-1,
+            1.0,
+            1.0
+        ],
+        bounds=([0, 0, 0, 0], np.inf)
+    )
+
+    popt_pong, _ = curve_fit(
+        f=pingpongMechanism,
+        xdata=(data["S1"], data["S2"]),
+        ydata=data["Rate"],
+        p0=[
+            data["Rate"].max(),
+            1.0,
+            1.0
+        ],
+        bounds=([0, 0, 0], np.inf)
+    )
+
+    popt_ordered, _ = curve_fit(
+        f=orderedSequentialMechanism,
+        xdata=(data["S1"], data["S2"]),
+        ydata=data["Rate"],
+        p0=[
+            data["Rate"].max(),
+            1e-1,
+            1.0
+        ],
+        bounds=([0, 0, 0], np.inf)
+    )
+
+    fitted_seq = sequentialMechanism((data["S1"], data["S2"]), *popt_seq)
+    fitted_pong = pingpongMechanism((data["S1"], data["S2"]), *popt_pong)
+    fitted_ordered = orderedSequentialMechanism((data["S1"], data["S2"]), *popt_ordered)
+
+    chi2_seq = chi2(fitted_seq, data["Rate"])
+    chi2_pong = chi2(fitted_pong, data["Rate"])
+    chi2_ordered = chi2(fitted_ordered, data["Rate"])
+
+    print("Chi2 value for sequential model:", chi2_seq)
+    print("Chi2 value for ping-pong model:", chi2_pong)
+    print("Chi2 value for ordered sequential model:", chi2_ordered)
+
+    return
+
+# makePlots()
+# modelFitComparison()
+simulateConcentration()
